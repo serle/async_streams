@@ -3,14 +3,11 @@ mod signals;
 use std::cmp::Ordering;
 //--------------------------------------------------------------------------------------------------
 use std::io::{BufWriter, Error, ErrorKind, Write};
-use std::time::{Duration, UNIX_EPOCH};
 use std::fs;
 use clap::Parser;
 use chrono::prelude::*;
 use chrono::TimeDelta;
 use yahoo_finance_api as yahoo;
-use yahoo::time::macros::datetime;
-use yahoo::YahooError;
 use time::OffsetDateTime;
 use signals::AsyncStockSignal;
 use signals::{
@@ -102,7 +99,7 @@ async fn fetch_closing_data(
 
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
-        Ok(quotes.iter().map(|q| q.adjclose as f64).collect())
+        Ok(quotes.iter().map(|q| q.adjclose).collect())
     } else {
         Ok(vec![])
     }
@@ -140,14 +137,12 @@ async fn stream_signals(symbols: &Vec<String>, start: &DateTime<Utc>, end: &Date
         .open("data.csv")?;
     let mut stream = BufWriter::new(file);
     let header = "period start,symbol,price,change %,min,max,30d avg\n";
-    println!("{}", &header);
     stream.write(header.as_bytes())?;
     for symbol in symbols.iter() {
         let closes = fetch_closing_data(&symbol, &start, &end).await?;
         if !closes.is_empty() {
             let data = calculate_signals(symbol, &start, &closes).await;
             let row = format!("{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}\n", data.0, data.1, data.2, data.3, data.4, data.5, data.6);
-            println!("{}", &row);
             stream.write(row.as_bytes())?;
         }
     }
@@ -164,6 +159,9 @@ async fn main() -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, UNIX_EPOCH};
+    use yahoo::time::macros::datetime;
+    use yahoo::YahooError;
     use std::str::FromStr;
     use super::*;
 

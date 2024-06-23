@@ -1,0 +1,12 @@
+[package]
+name = "async_streams"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+time = "0.3.36"
+chrono = "0.4.38"
+anyhow = "1.0.86"
+clap = { version = "4.5.7", features = ["derive"] } # here
+tokio = { version = "1", features = ["full"] }
+yahoo_finance_api = { version = "2.2.0"}

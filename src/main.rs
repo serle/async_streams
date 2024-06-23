@@ -1,14 +1,18 @@
+#![allow(dead_code)]
 mod signals;
 
 //--------------------------------------------------------------------------------------------------
 use std::cmp::Ordering;
-use tokio::io::{AsyncWriteExt, BufWriter, Error, ErrorKind};
-use tokio::fs;
+use async_recursion::async_recursion;
+use time::OffsetDateTime;
+use tokio::{task, fs};
+use tokio::time as tokio_time;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter, Error, ErrorKind};
+use tokio_stream::{StreamExt, wrappers::IntervalStream};
 use clap::Parser;
 use chrono::prelude::*;
 use chrono::TimeDelta;
 use yahoo_finance_api as yahoo;
-use time::OffsetDateTime;
 use signals::AsyncStockSignal;
 use signals::{
     PriceDifference,
@@ -32,6 +36,8 @@ struct Opts {
     to: Option<String>,
 }
 //--------------------------------------------------------------------------------------------------
+
+type Signals = (String, String, f64, f64, f64, f64, f64);
 
 #[derive(Debug, Clone)]
 struct Params {
@@ -103,7 +109,7 @@ async fn fetch_closing_data(
     }
 }
 
-async fn calculate_signals(symbol: &str, start: &DateTime<Utc>, closes: &Vec<f64>) -> (String, String, f64, f64, f64, f64, f64) {
+async fn calculate_signals(symbol: &str, start: &DateTime<Utc>, closes: &Vec<f64>) -> Signals {
     let signal = MaxPrice {};
     let period_max = signal.calculate(closes).await.unwrap_or(0.0);
     let signal = MinPrice {};
@@ -154,8 +160,49 @@ async fn stream_signals(symbols: &Vec<String>, start: &DateTime<Utc>, end: &Date
     stream.flush().await
 }
 
+async fn get_sp500() -> Result<Vec<String>, Error> {
+    let mut file = fs::File::open("sp500.txt").await?;
+    let mut buffer = String::new();
+    file.read_to_string(&mut buffer).await?;
+    let data = buffer.split(",").into_iter().map(|v| v.trim().to_string()).collect();
+    Ok(data)
+}
+
+#[async_recursion(Sync)]
+async fn print_signal_row(symbol: &'static str, start: DateTime<Utc>, end: DateTime<Utc>, attempt: u8) -> () {
+    let closes = fetch_closing_data(symbol, &start, &end).await;
+    if let Ok(closes) = closes {
+        if !closes.is_empty() {
+            let data = calculate_signals(symbol, &start, &closes).await;
+            let row = format!("{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}", data.0, data.1, data.2, data.3, data.4, data.5, data.6);
+            println!("{}", row);
+        }
+    } else {
+        if attempt < 5 {
+            task::spawn(print_signal_row(symbol, start, end, attempt + 1));
+        } else {
+            eprintln!("{}: fetch error", symbol);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let symbols = Box::leak(Box::new(get_sp500().await?));
+    let mut stream = IntervalStream::new(tokio_time::interval(tokio_time::Duration::from_secs(30)));
+
+    while let Some(_) = stream.next().await {
+        let end: DateTime<Utc> = Utc::now();
+        let start = end - TimeDelta::days(1);
+        for symbol in symbols.iter() {
+            task::spawn(print_signal_row(symbol, start, end, 0));
+        }
+    }
+
+    Ok(())
+}
+
+async fn old_main() -> std::io::Result<()> {
     println!();
     let params = Params::default();
     stream_signals(&params.symbols, &params.start, &params.end).await
@@ -238,9 +285,9 @@ mod tests {
     #[tokio::test]
     async fn it_finds_all_matching_tickers() -> Result<(),YahooError>{
         let provider = yahoo::YahooConnector::new().unwrap();
-        let resp = provider.search_ticker("Apple").await?;
+        let resp = provider.search_ticker("S&P500").await?;
 
-        println!("All tickers found while searching for 'Apple':");
+        println!("All tickers found while searching for 'S&P500':");
         let items = resp.quotes.iter();
         items.for_each(|item| println!("{}", item.symbol));
 

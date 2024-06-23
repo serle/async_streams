@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-time = "0.3.36"
+time= "0.3.36"
 chrono = "0.4.38"
 anyhow = "1.0.86"
+async-trait = "0.1.80"
+async-recursion = "1.1.1"
 clap = { version = "4.5.7", features = ["derive"] } # here
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1.15" }
 yahoo_finance_api = { version = "2.2.0"}

@@ -1,9 +1,9 @@
 mod signals;
 
-use std::cmp::Ordering;
 //--------------------------------------------------------------------------------------------------
-use std::io::{BufWriter, Error, ErrorKind, Write};
-use std::fs;
+use std::cmp::Ordering;
+use tokio::io::{AsyncWriteExt, BufWriter, Error, ErrorKind};
+use tokio::fs;
 use clap::Parser;
 use chrono::prelude::*;
 use chrono::TimeDelta;
@@ -95,8 +95,6 @@ async fn fetch_closing_data(
         .map_err(|_| Error::from(ErrorKind::InvalidData))?;
     let mut quotes = resp.quotes()
         .map_err(|_| Error::from(ErrorKind::InvalidData))?;
-    println!("{} quotes in January: {:?}", symbol, quotes);
-
     if !quotes.is_empty() {
         quotes.sort_by_cached_key(|k| k.timestamp);
         Ok(quotes.iter().map(|q| q.adjclose).collect())
@@ -134,27 +132,33 @@ async fn stream_signals(symbols: &Vec<String>, start: &DateTime<Utc>, end: &Date
     let file = fs::OpenOptions::new()
         .create(true)
         .write(true)
-        .open("data.csv")?;
+        .open("data.csv").await?;
     let mut stream = BufWriter::new(file);
     let header = "period start,symbol,price,change %,min,max,30d avg\n";
-    stream.write(header.as_bytes())?;
+    print!("{}", &header);
+    stream.write(header.as_bytes()).await?;
     for symbol in symbols.iter() {
-        let closes = fetch_closing_data(&symbol, &start, &end).await?;
-        if !closes.is_empty() {
-            let data = calculate_signals(symbol, &start, &closes).await;
-            let row = format!("{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}\n", data.0, data.1, data.2, data.3, data.4, data.5, data.6);
-            stream.write(row.as_bytes())?;
+        let closes = fetch_closing_data(&symbol, &start, &end).await;
+        match closes {
+            Ok(closes) => {
+                if !closes.is_empty() {
+                    let data = calculate_signals(symbol, &start, &closes).await;
+                    let row = format!("{},{},${:.2},{:.2}%,${:.2},${:.2},${:.2}\n", data.0, data.1, data.2, data.3, data.4, data.5, data.6);
+                    print!("{}", &row);
+                    stream.write(row.as_bytes()).await?;
+                }
+            }
+            Err(_) => eprintln!("\n{} data not found", &symbol),
         }
     }
-    stream.flush()?;
-    Ok(())
+    stream.flush().await
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    println!();
     let params = Params::default();
-    stream_signals(&params.symbols, &params.start, &params.end).await?;
-    Ok(())
+    stream_signals(&params.symbols, &params.start, &params.end).await
 }
 
 #[cfg(test)]

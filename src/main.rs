@@ -3,7 +3,7 @@ mod signals;
 use std::cmp::Ordering;
 //--------------------------------------------------------------------------------------------------
 use std::io::{BufWriter, Error, ErrorKind, Write};
-use std::time::{SystemTime, Duration, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 use std::fs;
 use clap::Parser;
 use chrono::prelude::*;

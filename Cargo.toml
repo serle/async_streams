@@ -2,6 +2,10 @@
 name = "async_streams"
 version = "0.1.0"
 edition = "2021"
+authors = ["Serle Shuman <serle.shuman@gmail.com>"]
+description = "Async stock market technical analysis tool with real-time streaming of S&P 500 indicators"
+license = "MIT"
+repository = "https://github.com/serle/async_streams"
 
 [dependencies]
 time= "0.3.36"
